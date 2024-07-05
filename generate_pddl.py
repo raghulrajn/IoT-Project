@@ -46,7 +46,13 @@ domain = '''
     :precondition (and (not (on-light ?l)) (low-light ?r) (not(optimum-light ?r)) (presence ?p))
     :effect (and (on-light ?l) (optimum-light ?r))
   )
-  
+
+  (:action maintain-light
+    :parameters (?l - light ?r - room ?p - occupancy)
+    :precondition (and (not(optimum-light ?r))(high-light ?r) (presence ?p))
+    :effect (and (on-light ?l) (optimum-light ?r))
+  )
+
   (:action switch-off-light
     :parameters (?l - light ?r - room ?p - occupancy)
     :precondition (and (on-light ?l) (high-light ?r) (not(presence ?p)) (not(optimum-light ?r)))
@@ -58,6 +64,8 @@ domain = '''
     :precondition (and (not (on-heater ?h)) (low-temperature ?r) (not(optimum-temperature ?r)))
     :effect (and (on-heater ?h) (optimum-temperature ?r))
   )
+
+  
   
   (:action switch-off-heater
     :parameters (?h - heater ?r - room)
@@ -95,7 +103,7 @@ def problemGeneration(sensorDict, message_buffer):
     problem = ''' '''
     for topic in sensorDict:
         if message_buffer[topic] is not None:
-          if topic == "iot/temperature":
+          if topic == "iot/sensor/temperature":
               if int(message_buffer[topic])>sensorDict[topic]["upper_bound"]:
                   problem += "(high-temperature r1) "
                   problem += "(on-heater h) "
@@ -103,7 +111,7 @@ def problemGeneration(sensorDict, message_buffer):
                   problem += "(low-temperature r1) "
               else:
                   problem += "(optimum-temperature r1) "
-          if topic == "iot/airquality":
+          if topic == "iot/sensor/airquality":
               if int(message_buffer[topic])>sensorDict[topic]["upper_bound"]:
                   problem += "(high-air-quality r1) "
               elif int(message_buffer[topic])<sensorDict[topic]["lower_bound"]:
@@ -111,15 +119,15 @@ def problemGeneration(sensorDict, message_buffer):
                   problem += "(low-air-quality r1) "
               else:
                   problem += "(optimum-air-quality r1) "
-          if topic =="iot/presence":
+          if topic =="iot/sensor/presence":
               if int(message_buffer[topic])==0:
                   problem += "(not(presence p)) "
               if int(message_buffer[topic])==1:
                   problem += "(presence p) "
-          if topic =="iot/luminosity":
+          if topic =="iot/sensor/luminosity":
               if int(message_buffer[topic])<sensorDict[topic]["lower_bound"]:
                   problem += "(low-light r1) "
-              elif int(message_buffer[topic])>sensorDict[topic]["upper_bound"]:
+              elif int(message_buffer[topic])>sensorDict[topic]["lower_bound"]:
                   problem += "(on-light l) "
                   problem += "(high-light r1) "
               else:
