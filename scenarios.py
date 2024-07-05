@@ -5,47 +5,68 @@ import random
 import time
 import requests
 from queue import Empty
+import grovepi
 
 # MQTT settings
 broker = '127.0.0.1'
 port = 1883
 topic = "your/topic"
 client_id = f'python-mqtt-{random.randint(0, 1000)}'
+LED_PORT = 2
+light_sensor = 1 # port A1
+
+grovepi.pinMode(LED_PORT, "OUTPUT")
+
 
 sensorDict = {
-    "iot/temperature":{
-        "topic":"iot/temperature",
+    "iot/sensor/temperature":{
+        "topic":"iot/sensor/temperature",
         "value":40,
         "lower_bound":22,
         "upper_bound":25
     },
-    "iot/airquality":{
-        "topic":"iot/airquality",
+    "iot/sensor/airquality":{
+        "topic":"iot/sensor/airquality",
         "value":40,
         "lower_bound":10,
         "upper_bound":15
     },
-    "iot/presence":{
-        "topic":"iot/presence",
+    "iot/sensor/presence":{
+        "topic":"iot/sensor/presence",
         "value":1,
         "lower_bound":0,
         "upper_bound":1
     },
-    "iot/luminosity":{
-        "topic":"iot/luminosity",
-        "value":25,
-        "lower_bound":20,
-        "upper_bound":50
+    "iot/sensor/luminosity":{
+        "topic":"iot/sensor/luminosity",
+        "value":40,
+        "lower_bound":500,
+        "upper_bound":1000
+    },
+    "iot/actuator/heater":{
+        "topic":"iot/actuator/heater",
+        "value":"heater-off"
+    },
+    "iot/actuator/light":{
+        "topic":"iot/actuator/light",
+        "value":"light-off"
+    },
+    "iot/actuator/window":{
+        "topic":"iot/actuator/window",
+        "value":"open-window"
     }
 }
 
 # Queue for inter-thread communication
-value_queue = {"iot/temperature":None,
-               "iot/airquality":None,
-               "iot/presence":None,
-               "iot/luminosity":None}
+value_queue = {"iot/sensor/temperature":None,
+               "iot/sensor/airquality":None,
+               "iot/sensor/presence":None,
+               "iot/sensor/luminosity":None,
+               "iot/actuator/heater":None,
+               "iot/actuator/light":None,
+               "iot/actuator/window":None}
 
-topics = ['iot/temperature','iot/airquality', 'iot/presence',"iot/luminosity"]
+topics = ['iot/sensor/temperature','iot/sensor/airquality', 'iot/sensor/presence',"iot/sensor/luminosity","iot/actuator/heater","iot/actuator/light","iot/actuator/window"]
 message_buffer = {topic: None for topic in topics}
 dict_lock = threading.Lock()
 # MQTT Publisher
@@ -84,27 +105,35 @@ def on_connect(client, userdata, flags, rc):
 def implement_action(action, message_buffer):
     global value_queue
     if ("switch-off-heater") in action:
-        value_queue["iot/temperature"] = int(message_buffer["iot/temperature"]) - 1
+        value_queue["iot/sensor/temperature"] = int(message_buffer["iot/sensor/temperature"]) - 1
+        value_queue["iot/actuator/heater"] = "heater-off"
     if ("switch-on-heater") in action:
-        value_queue["iot/temperature"] = int(message_buffer["iot/temperature"]) + 1
+        value_queue["iot/sensor/temperature"] = int(message_buffer["iot/sensor/temperature"]) + 1
+        value_queue["iot/actuator/heater"] = "heater-on"
     if ("switch-on-light") in action:
-        value_queue["iot/luminosity"] = int(message_buffer["iot/luminosity"]) + 1
+        value_queue["iot/sensor/luminosity"] = get_light_intensity()
+        value_queue["iot/actuator/light"] = "light-on"
+
     if ("switch-off-light") in action:
-        value_queue["iot/luminosity"] = int(message_buffer["iot/luminosity"]) - 1
+        value_queue["iot/sensor/luminosity"] = get_light_intensity()
+        value_queue["iot/actuator/light"] = "light-off"
     if ("open-window") in action:
-        value_queue["iot/airquality"] = int(message_buffer["iot/airquality"]) - 2
+        value_queue["iot/sensor/airquality"] = int(message_buffer["iot/sensor/airquality"]) - 2
+        value_queue["iot/actuator/window"] = "open-window"
     if ("close-window") in action:
-        value_queue["iot/airquality"] = int(message_buffer["iot/airquality"]) + 2
+        value_queue["iot/sensor/airquality"] = int(message_buffer["iot/sensor/airquality"]) + 2
+        value_queue["iot/actuator/window"] = "close-window"
     
 
 def check_value(sensorDict,message_buffer):
     global value_queue
     flag=False
     for topic in topics:
-        if message_buffer[topic] is not None:
-            if not (sensorDict[topic]["lower_bound"] <= int(message_buffer[topic]) <= sensorDict[topic]["upper_bound"]):
-                print(topic +" is not in optimum level...")
-                flag=True
+        if 'sensor' in topic:
+            if message_buffer[topic] is not None:   
+                if not (sensorDict[topic]["lower_bound"] <= int(message_buffer[topic]) <= sensorDict[topic]["upper_bound"]):
+                    print(topic +" is not in optimum level...")
+                    flag=True
     if flag:
         problem = generate_pddl.problemGeneration(sensorDict,message_buffer)
         action = call_api(generate_pddl.domain, problem)
@@ -136,11 +165,11 @@ def call_api(domain, problem):
     else:
         return plan
 
-# MQTT Client
-# def connect_mqtt():
-#     client = mqtt_client.Client(client_id)
-#     client.connect(broker, port)
-#     return client
+def get_light_intensity():
+    #light_intensity = grovepi.analogRead(light_sensor)
+    light_intensity = random.randint(100,1000)
+    print(light_intensity)
+    return light_intensity
 
 def main():
     client = mqtt.Client()
