@@ -133,5 +133,4 @@ def problemGeneration(sensorDict, message_buffer):
               else:
                   problem += "(optimum-light r1) "
     problem +=") "
-    return start + problem + end
-
+    return start + problem + end, problem
