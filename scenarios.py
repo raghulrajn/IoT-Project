@@ -6,17 +6,16 @@ import time
 import requests
 from queue import Empty
 import grovepi
-
+from utils import DatabaseHandler
 # MQTT settings
 broker = '127.0.0.1'
 port = 1883
-topic = "your/topic"
-client_id = f'python-mqtt-{random.randint(0, 1000)}'
+
 LED_PORT = 2
 light_sensor = 1 # port A1
 
 grovepi.pinMode(LED_PORT, "OUTPUT")
-
+client = mqtt.Client()
 
 sensorDict = {
     "iot/sensor/temperature":{
@@ -57,6 +56,12 @@ sensorDict = {
     }
 }
 
+db_topics = ['iot/sensor/temperature',
+          'iot/sensor/airquality', 
+          'iot/sensor/presence',
+          "iot/sensor/luminosity"]
+
+db_handler = DatabaseHandler('mqtt_data.db', db_topics)
 # Queue for inter-thread communication
 value_queue = {"iot/sensor/temperature":None,
                "iot/sensor/airquality":None,
@@ -66,7 +71,15 @@ value_queue = {"iot/sensor/temperature":None,
                "iot/actuator/light":None,
                "iot/actuator/window":None}
 
-topics = ['iot/sensor/temperature','iot/sensor/airquality', 'iot/sensor/presence',"iot/sensor/luminosity","iot/actuator/heater","iot/actuator/light","iot/actuator/window"]
+topics = ['iot/sensor/temperature',
+          'iot/sensor/airquality', 
+          'iot/sensor/presence',
+          "iot/sensor/luminosity",
+          "iot/actuator/heater",
+          "iot/actuator/light",
+          "iot/actuator/window"]
+
+
 message_buffer = {topic: None for topic in topics}
 dict_lock = threading.Lock()
 # MQTT Publisher
@@ -88,12 +101,13 @@ def publish(client, queue):
                 time.sleep(2)
         # time.sleep(1)  # Publish every 5 seconds
 
-
 def on_message(client, userdata, msg):
     global message_buffer
     message_buffer[msg.topic] = msg.payload.decode('utf-8')
     if all(value is not None for value in message_buffer.values()):
         print("subscribed value from all topics ",message_buffer)
+        write_buffer = {k: v for k, v in message_buffer.items() if k in db_topics}
+        db_handler.write_to_db(write_buffer)
         check_value(sensorDict, message_buffer)
         message_buffer = {topic: None for topic in topics}
 
@@ -135,8 +149,10 @@ def check_value(sensorDict,message_buffer):
                     print(topic +" is not in optimum level...")
                     flag=True
     if flag:
-        problem = generate_pddl.problemGeneration(sensorDict,message_buffer)
-        action = call_api(generate_pddl.domain, problem)
+        problem_pddl, problem = generate_pddl.problemGeneration(sensorDict,message_buffer)
+        action = call_api(generate_pddl.domain, problem_pddl)
+        client.publish('iot/aiplanning/problem', problem)
+        client.publish('iot/aiplanning/solution', action)
         print(action)
         implement_action(action, message_buffer)
 
@@ -172,18 +188,15 @@ def get_light_intensity():
     return light_intensity
 
 def main():
-    client = mqtt.Client()
+    global client
     client.connect(broker, port, 60)
     client.on_connect = on_connect
     client.on_message = on_message
     client.loop_start() 
     while True:
-        # publish(client, value_queue)
-        # subscribe(client, value_queue)
         t1 = threading.Thread(target=publish, args=(client, value_queue))
         # t2 = threading.Thread(target=subscribe, args=(client))
         t1.start()
-        # t2.start()
 
 
 if __name__ == '__main__':
