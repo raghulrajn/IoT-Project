@@ -23,7 +23,7 @@ db_topics = ['iot/sensor/temperature',
 soln_topics = ['iot/aiplanning/problem',
                'iot/aiplanning/solution']
 # Create a Dash app
-app = dash.Dash(__name__)
+app = dash.Dash(__name__,suppress_callback_exceptions=True)
 
 app.layout = html.Div([
     html.H1("MQTT Messages"),
