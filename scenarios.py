@@ -5,30 +5,26 @@ import random
 import time
 import requests
 from queue import Empty
-import grovepi
 from utils import DatabaseHandler
 # MQTT settings
 broker = '127.0.0.1'
 port = 1883
-
-LED_PORT = 2
-light_sensor = 1 # port A1
-
-grovepi.pinMode(LED_PORT, "OUTPUT")
 client = mqtt.Client()
+
+count = 0
 
 sensorDict = {
     "iot/sensor/temperature":{
         "topic":"iot/sensor/temperature",
-        "value":40,
+        "value":23,
         "lower_bound":22,
         "upper_bound":25
     },
     "iot/sensor/airquality":{
         "topic":"iot/sensor/airquality",
-        "value":40,
-        "lower_bound":10,
-        "upper_bound":15
+        "value":350,
+        "lower_bound":300,
+        "upper_bound":400
     },
     "iot/sensor/presence":{
         "topic":"iot/sensor/presence",
@@ -38,7 +34,7 @@ sensorDict = {
     },
     "iot/sensor/luminosity":{
         "topic":"iot/sensor/luminosity",
-        "value":40,
+        "value":600,
         "lower_bound":500,
         "upper_bound":1000
     },
@@ -97,7 +93,7 @@ def publish(client, queue):
             
                 result = client.publish(sensorDict[sensor]["topic"],
                                         sensorDict[sensor]["value"])
-                print("publishing " + str(sensorDict[sensor]["value"])+" to " +str(sensorDict[sensor]["topic"]))
+                #print("publishing " + str(sensorDict[sensor]["value"])+" to " +str(sensorDict[sensor]["topic"]))
                 time.sleep(2)
         # time.sleep(1)  # Publish every 5 seconds
 
@@ -105,7 +101,8 @@ def on_message(client, userdata, msg):
     global message_buffer
     message_buffer[msg.topic] = msg.payload.decode('utf-8')
     if all(value is not None for value in message_buffer.values()):
-        print("subscribed value from all topics ",message_buffer)
+        time.sleep(2)
+        print("\nSubscribed value from all topics:\n",message_buffer,"\n")
         write_buffer = {k: v for k, v in message_buffer.items() if k in db_topics}
         db_handler.write_to_db(write_buffer)
         check_value(sensorDict, message_buffer)
@@ -118,29 +115,30 @@ def on_connect(client, userdata, flags, rc):
 
 def implement_action(action, message_buffer):
     global value_queue
+    value_queue["iot/sensor/presence"] = random.randint(0, 1)
     if ("switch-off-heater") in action:
-        value_queue["iot/sensor/temperature"] = int(message_buffer["iot/sensor/temperature"]) - 1
+        value_queue["iot/sensor/temperature"] = int(message_buffer["iot/sensor/temperature"]) - 2
         value_queue["iot/actuator/heater"] = "heater-off"
     if ("switch-on-heater") in action:
-        value_queue["iot/sensor/temperature"] = int(message_buffer["iot/sensor/temperature"]) + 1
+        value_queue["iot/sensor/temperature"] = int(message_buffer["iot/sensor/temperature"]) + 2
         value_queue["iot/actuator/heater"] = "heater-on"
     if ("switch-on-light") in action:
-        value_queue["iot/sensor/luminosity"] = get_light_intensity()
+        value_queue["iot/sensor/luminosity"] = int(message_buffer["iot/sensor/luminosity"]) + 500
         value_queue["iot/actuator/light"] = "light-on"
 
     if ("switch-off-light") in action:
-        value_queue["iot/sensor/luminosity"] = get_light_intensity()
+        value_queue["iot/sensor/luminosity"] = int(message_buffer["iot/sensor/luminosity"]) - 500
         value_queue["iot/actuator/light"] = "light-off"
     if ("open-window") in action:
-        value_queue["iot/sensor/airquality"] = int(message_buffer["iot/sensor/airquality"]) - 2
-        value_queue["iot/actuator/window"] = "open-window"
+        value_queue["iot/sensor/airquality"] = int(message_buffer["iot/sensor/airquality"]) - 20
+        value_queue["iot/actuator/window"] = "window-open"
     if ("close-window") in action:
-        value_queue["iot/sensor/airquality"] = int(message_buffer["iot/sensor/airquality"]) + 2
-        value_queue["iot/actuator/window"] = "close-window"
+        value_queue["iot/sensor/airquality"] = int(message_buffer["iot/sensor/airquality"]) + 20
+        value_queue["iot/actuator/window"] = "window-close"
     
 
 def check_value(sensorDict,message_buffer):
-    global value_queue
+    global value_queue, count
     flag=False
     for topic in topics:
         if 'sensor' in topic:
@@ -148,13 +146,24 @@ def check_value(sensorDict,message_buffer):
                 if not (sensorDict[topic]["lower_bound"] <= int(message_buffer[topic]) <= sensorDict[topic]["upper_bound"]):
                     print(topic +" is not in optimum level...")
                     flag=True
+                
     if flag:
         problem_pddl, problem = generate_pddl.problemGeneration(sensorDict,message_buffer)
         action = call_api(generate_pddl.domain, problem_pddl)
         client.publish('iot/aiplanning/problem', problem)
         client.publish('iot/aiplanning/solution', action)
-        print(action)
+        if action != 'No plan found':
+            print("\nComputed Plan:\n"+action+"\n")
         implement_action(action, message_buffer)
+    else:
+        count=count+1
+        print("count:",count)
+        if count==10:
+            value_queue["iot/sensor/airquality"] = 1000
+        if count==20:
+            value_queue["iot/sensor/temperature"] = 40
+            count = 0
+
 
 def call_api(domain, problem):
     req_body = {
