@@ -47,12 +47,6 @@ domain = '''
     :effect (and (on-light ?l) (optimum-light ?r))
   )
 
-  (:action maintain-light
-    :parameters (?l - light ?r - room ?p - occupancy)
-    :precondition (and (not(optimum-light ?r))(high-light ?r) (presence ?p))
-    :effect (and (on-light ?l) (optimum-light ?r))
-  )
-
   (:action switch-off-light
     :parameters (?l - light ?r - room ?p - occupancy)
     :precondition (and (on-light ?l) (high-light ?r) (not(presence ?p)) (not(optimum-light ?r)))
