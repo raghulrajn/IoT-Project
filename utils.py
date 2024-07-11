@@ -1,12 +1,9 @@
-import json
 import sqlite3
 import threading
 import paho.mqtt.client as mqtt
 from typing import Dict, Any
 import pandas as pd
-import datetime
-
-topics = ['iot/temp', 'iot/count']
+import config
 
 class MQTTClient:
     """
@@ -79,8 +76,8 @@ class DatabaseHandler:
         """Initializes the SQLite database and creates the table if it doesn't exist."""
         conn = sqlite3.connect(self.db_name)
         cursor = conn.cursor()
-
-        columns = ', '.join([f"{topic.split('/')[1]} FLOAT" for topic in self.topics])
+        columns = ', '.join([f"{topic.split('/')[2]} FLOAT" for topic in self.topics if topic in config.sensor_topics])
+        columns = ', '.join([f"{topic.split('/')[2]} TEXT" for topic in self.topics if topic in config.actuator_topics])
         cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,7 +113,7 @@ class DatabaseHandler:
         """
         conn = sqlite3.connect(self.db_name)
         cursor = conn.cursor()
-        columns = ', '.join([f"'{topic.split('/')[1]}'" for topic in messages.keys()])
+        columns = ', '.join([f"'{topic.split('/')[2]}'" for topic in messages.keys()])
         placeholders = ', '.join(['?' for _ in messages.keys()])
         values = [messages[topic] for topic in messages.keys()]
 

@@ -4,6 +4,7 @@ import paho.mqtt.client as mqtt
 import random
 import time
 import requests
+import config
 from queue import Empty
 from utils import DatabaseHandler
 # MQTT settings
@@ -13,51 +14,9 @@ client = mqtt.Client()
 
 count = 0
 
-sensorDict = {
-    "iot/sensor/temperature":{
-        "topic":"iot/sensor/temperature",
-        "value":23,
-        "lower_bound":22,
-        "upper_bound":25
-    },
-    "iot/sensor/airquality":{
-        "topic":"iot/sensor/airquality",
-        "value":350,
-        "lower_bound":300,
-        "upper_bound":400
-    },
-    "iot/sensor/presence":{
-        "topic":"iot/sensor/presence",
-        "value":1,
-        "lower_bound":0,
-        "upper_bound":1
-    },
-    "iot/sensor/luminosity":{
-        "topic":"iot/sensor/luminosity",
-        "value":600,
-        "lower_bound":500,
-        "upper_bound":1000
-    },
-    "iot/actuator/heater":{
-        "topic":"iot/actuator/heater",
-        "value":"heater-off"
-    },
-    "iot/actuator/light":{
-        "topic":"iot/actuator/light",
-        "value":"light-off"
-    },
-    "iot/actuator/window":{
-        "topic":"iot/actuator/window",
-        "value":"open-window"
-    }
-}
+sensorDict = config.sensorDict
 
-db_topics = ['iot/sensor/temperature',
-          'iot/sensor/airquality', 
-          'iot/sensor/presence',
-          "iot/sensor/luminosity"]
-
-db_handler = DatabaseHandler('mqtt_data.db', db_topics)
+db_handler = DatabaseHandler('mqtt_data.db', config.topics)
 # Queue for inter-thread communication
 value_queue = {"iot/sensor/temperature":None,
                "iot/sensor/airquality":None,
@@ -67,19 +26,10 @@ value_queue = {"iot/sensor/temperature":None,
                "iot/actuator/light":None,
                "iot/actuator/window":None}
 
-topics = ['iot/sensor/temperature',
-          'iot/sensor/airquality', 
-          'iot/sensor/presence',
-          "iot/sensor/luminosity",
-          "iot/actuator/heater",
-          "iot/actuator/light",
-          "iot/actuator/window"]
-
-
-message_buffer = {topic: None for topic in topics}
+message_buffer = {topic: None for topic in config.topics}
 dict_lock = threading.Lock()
 # MQTT Publisher
-def publish(client, queue):
+def publish(client,queue):
     global sensorDict
     while True:
         with dict_lock:
@@ -93,27 +43,34 @@ def publish(client, queue):
             
                 result = client.publish(sensorDict[sensor]["topic"],
                                         sensorDict[sensor]["value"])
-                #print("publishing " + str(sensorDict[sensor]["value"])+" to " +str(sensorDict[sensor]["topic"]))
                 time.sleep(2)
-        # time.sleep(1)  # Publish every 5 seconds
 
 def on_message(client, userdata, msg):
+    """
+    Callback function to call when message is published in the MQTT broker
+    
+    """
     global message_buffer
     message_buffer[msg.topic] = msg.payload.decode('utf-8')
     if all(value is not None for value in message_buffer.values()):
         time.sleep(2)
         print("\nSubscribed value from all topics:\n",message_buffer,"\n")
-        write_buffer = {k: v for k, v in message_buffer.items() if k in db_topics}
-        db_handler.write_to_db(write_buffer)
-        check_value(sensorDict, message_buffer)
-        message_buffer = {topic: None for topic in topics}
+        # write_buffer = {k: v for k, v in message_buffer.items() if k in config.db_topics}
+        db_handler.write_to_db(message_buffer)
+        check_sensor_state(sensorDict, message_buffer)
+        message_buffer = {topic: None for topic in config.topics}
 
 
 def on_connect(client, userdata, flags, rc):
-    for topic in topics:
+    for topic in config.topics:
         client.subscribe(topic)
 
-def implement_action(action, message_buffer):
+def implement_action(action:str, message_buffer:dict):
+    """
+    A function which simulates the actuator output based on plan generated.
+    This update a global dict which updates sensor values and actuator status
+    
+    """
     global value_queue
     value_queue["iot/sensor/presence"] = random.randint(0, 1)
     if ("switch-off-heater") in action:
@@ -137,19 +94,23 @@ def implement_action(action, message_buffer):
         value_queue["iot/actuator/window"] = "window-close"
     
 
-def check_value(sensorDict,message_buffer):
+def check_sensor_state(sensorDict:dict,message_buffer:dict):
+    """
+    Checks the each sensor status, if the state is not optimal, then a problem is generated based 
+    on sensor and sent to AI planning API
+    
+    """
     global value_queue, count
-    flag=False
-    for topic in topics:
-        if 'sensor' in topic:
-            if message_buffer[topic] is not None:   
+    notOptimalState=False
+    for topic in config.topics:
+        if 'sensor' in topic and message_buffer[topic] is not None:
                 if not (sensorDict[topic]["lower_bound"] <= int(message_buffer[topic]) <= sensorDict[topic]["upper_bound"]):
                     print(topic +" is not in optimum level...")
-                    flag=True
+                    notOptimalState=True
                 
-    if flag:
+    if notOptimalState:
         problem_pddl, problem = generate_pddl.problemGeneration(sensorDict,message_buffer)
-        action = call_api(generate_pddl.domain, problem_pddl)
+        action = call_aiplanning_api(generate_pddl.domain, problem_pddl)
         client.publish('iot/aiplanning/problem', problem)
         client.publish('iot/aiplanning/solution', action)
         if action != 'No plan found':
@@ -157,7 +118,6 @@ def check_value(sensorDict,message_buffer):
         implement_action(action, message_buffer)
     else:
         count=count+1
-        print("count:",count)
         if count==10:
             value_queue["iot/sensor/airquality"] = 1000
         if count==20:
@@ -165,7 +125,11 @@ def check_value(sensorDict,message_buffer):
             count = 0
 
 
-def call_api(domain, problem):
+def call_aiplanning_api(domain:str, problem:str)->str:
+    """
+    sends POST request to AI planning API with configured domain and dynamically generated problem
+    
+    """
     req_body = {
         "domain": domain,
         "problem":problem
@@ -182,7 +146,6 @@ def call_api(domain, problem):
         time.sleep(0.5)
 
     result = celery_result.json()
-    # print(celery_result.json())
     # Extract the plan
     if result['status'] == 'ok' and 'output' in result['result']:
         plan = result['result']['output'].get('plan', 'No plan found')
@@ -190,10 +153,9 @@ def call_api(domain, problem):
     else:
         return plan
 
-def get_light_intensity():
+def get_light_intensity()->int:
     #light_intensity = grovepi.analogRead(light_sensor)
     light_intensity = random.randint(100,1000)
-    print(light_intensity)
     return light_intensity
 
 def main():
