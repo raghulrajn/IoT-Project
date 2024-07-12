@@ -13,13 +13,10 @@ cd IoT-Project
 pip install -r requirements.txt
 ````
 ## Running the script
-Simulate publishing the sensor values via shell script to MQTT broker
-````
-source mqtt_pub.sh
-````
+
 To get values published to broker and write it to Sqlite DB
 ````
-python main.py
+python scenarios.py
 ````
 To read values from Sqlite DB and plot it for visualisation
 ````
