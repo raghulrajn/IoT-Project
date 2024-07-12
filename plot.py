@@ -9,9 +9,12 @@ from plotly.subplots import make_subplots
 import plotly.graph_objs as go
 from typing import Dict, Any
 from threading import Thread
+import paho.mqtt.client as mqtt
 import config
 
-db_handler = DatabaseHandler('mqtt_data.db', config.topics)
+mqtt_client = mqtt.Client()
+db_handler = DatabaseHandler('mqtt_data.db', config.topics,"mqtt")
+planner_handler = DatabaseHandler('planner_data.db', config.planning_topics,"planning")
 problem = ""
 solution = ""
 db_topics = ['iot/sensor/temperature',
@@ -49,7 +52,6 @@ app.layout = html.Div([
 )
 def update_graphs(n):
     df = db_handler.read_from_db()
-
     graphs = []
     max_values = []
     for topic in config.sensor_topics:
@@ -67,12 +69,48 @@ def update_graphs(n):
 @app.callback(Output('live-update-text1', 'children'),
               Input('interval-component', 'n_intervals'))
 def update_message1(n):
-    return f"Message from topic/test1: {problem}"
+    plan_df = planner_handler.read_from_db()
+    print(len(plan_df))
+    for topic in config.planning_topics:
+        topic_ = topic.split('/')[2]
+        if "problem" in plan_df.columns:
+            problem_ = plan_df["problem"].iloc[-1]
+    return f"Problem: {problem_}"
 
 @app.callback(Output('live-update-text2', 'children'),
               Input('interval-component', 'n_intervals'))
 def update_message2(n):
-    return f"Message from topic/test2: {solution}"
+    plan_df = planner_handler.read_from_db()
+    for topic in config.planning_topics:
+        topic_ = topic.split('/')[2]
+        if "solution" in plan_df.columns:
+            solution = plan_df["solution"].iloc[-1]
+    return f"solution: {solution}"
+
+# def on_connect(client, userdata, flags, rc):
+#     print(f"Connected with result code {rc}")
+#     client.subscribe("iot/aiplanning/problem")
+#     client.subscribe("iot/aiplanning/solution")
+
+# def on_message(client, userdata, msg):
+#     global problem, solution
+#     if msg.topic == "iot/aiplanning/problem":
+#         problem = msg.payload.decode()
+#     elif msg.topic == "iot/aiplanning/solution":
+#         solution = msg.payload.decode()
+
+
+
+# def mqtt_loop():
+#     mqtt_client.connect("127.0.0.1", 1883, 60)
+#     mqtt_client.on_connect = on_connect
+#     mqtt_client.on_message = on_message
+#     mqtt_client.loop_start()
+
+# Start the MQTT client in a separate thread
+# mqtt_thread = Thread(target=mqtt_loop)
+# mqtt_thread.start()
+# mqtt_thread.join()
 
 if __name__ == '__main__':
     app.run_server(debug=True)

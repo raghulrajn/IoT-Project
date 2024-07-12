@@ -1,7 +1,7 @@
 sensorDict = {
     "iot/sensor/temperature":{
         "topic":"iot/sensor/temperature",
-        "value":23,
+        "value":40,
         "lower_bound":22,
         "upper_bound":25
     },
@@ -45,16 +45,19 @@ db_topics = ['iot/sensor/temperature',
 topics = ['iot/sensor/temperature',
           'iot/sensor/airquality', 
           'iot/sensor/presence',
-          "iot/sensor/luminosity",
-          "iot/actuator/heater",
-          "iot/actuator/light",
-          "iot/actuator/window"]
+          'iot/sensor/luminosity',
+          'iot/actuator/heater',
+          'iot/actuator/light',
+          'iot/actuator/window']
 
 sensor_topics = ['iot/sensor/temperature',
           'iot/sensor/airquality', 
           'iot/sensor/presence',
-          "iot/sensor/luminosity"]
+          'iot/sensor/luminosity']
 
-actuator_topics = ["iot/actuator/heater",
-          "iot/actuator/light",
-          "iot/actuator/window"]
+actuator_topics = ['iot/actuator/heater',
+          'iot/actuator/light',
+          'iot/actuator/window']
+
+planning_topics = ['iot/aiplanning/problem',
+          'iot/aiplanning/solution']

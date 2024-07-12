@@ -67,17 +67,24 @@ class DatabaseHandler:
         db_name (str): Name of the SQLite database file.
     """
 
-    def __init__(self, db_name: str, topics:list):
+    def __init__(self, db_name: str, topics:list,type:str):
         self.db_name = db_name
         self.topics = topics
+        self.type = type
         self.init_db()
 
     def init_db(self):
         """Initializes the SQLite database and creates the table if it doesn't exist."""
         conn = sqlite3.connect(self.db_name)
         cursor = conn.cursor()
-        columns = ', '.join([f"{topic.split('/')[2]} FLOAT" for topic in self.topics if topic in config.sensor_topics])
-        columns = ', '.join([f"{topic.split('/')[2]} TEXT" for topic in self.topics if topic in config.actuator_topics])
+        if self.type=="mqtt":
+            sensor_columns = ', '.join([f"{topic.split('/')[2]} FLOAT" for topic in self.topics if topic in config.sensor_topics])
+            actuator_columns = ', '.join([f"{topic.split('/')[2]} TEXT" for topic in self.topics if topic in config.actuator_topics])
+            columns = ', '.join([sensor_columns,actuator_columns])
+        else:
+            columns = ', '.join([f"{topic.split('/')[2]} TEXT" for topic in self.topics if topic in config.planning_topics])
+        # columns = ', '.join([sensor_columns,actuator_columns,planning_columns])
+        print(columns)
         cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,7 +120,7 @@ class DatabaseHandler:
         """
         conn = sqlite3.connect(self.db_name)
         cursor = conn.cursor()
-        columns = ', '.join([f"'{topic.split('/')[2]}'" for topic in messages.keys()])
+        columns = ', '.join([f"{topic.split('/')[2]}" for topic in messages.keys()])
         placeholders = ', '.join(['?' for _ in messages.keys()])
         values = [messages[topic] for topic in messages.keys()]
 

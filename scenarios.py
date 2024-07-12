@@ -16,7 +16,8 @@ count = 0
 
 sensorDict = config.sensorDict
 
-db_handler = DatabaseHandler('mqtt_data.db', config.topics)
+db_handler = DatabaseHandler('mqtt_data.db', config.topics,"mqtt")
+planner_handler = DatabaseHandler('planner_data.db', config.planning_topics,"planning")
 # Queue for inter-thread communication
 value_queue = {"iot/sensor/temperature":None,
                "iot/sensor/airquality":None,
@@ -27,6 +28,8 @@ value_queue = {"iot/sensor/temperature":None,
                "iot/actuator/window":None}
 
 message_buffer = {topic: None for topic in config.topics}
+planner_buffer = {topic: None for topic in config.planning_topics}
+
 dict_lock = threading.Lock()
 # MQTT Publisher
 def publish(client,queue):
@@ -50,15 +53,24 @@ def on_message(client, userdata, msg):
     Callback function to call when message is published in the MQTT broker
     
     """
-    global message_buffer
-    message_buffer[msg.topic] = msg.payload.decode('utf-8')
+    global message_buffer, planner_buffer
+    if msg.topic in message_buffer.keys():
+        message_buffer[msg.topic] = msg.payload.decode('utf-8')
+    if msg.topic in planner_buffer.keys():
+        planner_buffer[msg.topic] = msg.payload.decode('utf-8')
     if all(value is not None for value in message_buffer.values()):
-        time.sleep(2)
+        time.sleep(0.5)
         print("\nSubscribed value from all topics:\n",message_buffer,"\n")
         # write_buffer = {k: v for k, v in message_buffer.items() if k in config.db_topics}
         db_handler.write_to_db(message_buffer)
         check_sensor_state(sensorDict, message_buffer)
         message_buffer = {topic: None for topic in config.topics}
+    if all(value is not None for value in planner_buffer.values()):
+        time.sleep(0.5)
+        print("\nSubscribed value from planner:\n",planner_buffer,"\n")
+        planner_handler.write_to_db(planner_buffer)
+        df = planner_handler.read_from_db()
+        planner_buffer = {topic: None for topic in config.planning_topics}
 
 
 def on_connect(client, userdata, flags, rc):
@@ -109,10 +121,13 @@ def check_sensor_state(sensorDict:dict,message_buffer:dict):
                     notOptimalState=True
                 
     if notOptimalState:
+        
         problem_pddl, problem = generate_pddl.problemGeneration(sensorDict,message_buffer)
-        action = call_aiplanning_api(generate_pddl.domain, problem_pddl)
         client.publish('iot/aiplanning/problem', problem)
+        planner_buffer['iot/aiplanning/problem'] = problem
+        action = call_aiplanning_api(generate_pddl.domain, problem_pddl)
         client.publish('iot/aiplanning/solution', action)
+        planner_buffer['iot/aiplanning/solution'] = action
         if action != 'No plan found':
             print("\nComputed Plan:\n"+action+"\n")
         implement_action(action, message_buffer)
